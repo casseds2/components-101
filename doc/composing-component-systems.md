@@ -52,7 +52,7 @@ components in the system in order and calls `(start component)` which replaces t
 record from the system map with a new instance of the record with the new information
 that you assoc in the `start` method.
 
-Similarly the same thing is done with `(alter-var-root #'system component/stop)` when
+Similarly, the same thing is done with `(alter-var-root #'system component/stop)` when
 we want to shut down the system gracefully. This would typically be done in a shutdown
 hook.
 
@@ -62,7 +62,7 @@ In the case of the above system, the components would look like this:
 (:require [com.stuartsierra.component :refer [Lifecyle]])
 
 (defrecord Config [file db-config]
-  Lifecyle
+  Lifecycle
   (start [component]
     (let [configuration (slurp file)]
       (assoc component :db-config configuration)))
@@ -81,3 +81,43 @@ In the case of the above system, the components would look like this:
     (assoc component :config nil
                      :conn nil)))
 ```
+
+## Stopping Components
+As you can see in the example above, I have `assoc`'d nil into the config field
+in the Db component. This may seem strange as in the `start` method I only `assoc`
+the field `conn` into the component. We must be careful though. Since a record is
+only a map, all of the fields passed into it must be cleaned up. This is the duty
+of the person writing the `stop` method for the component.
+
+![](assets/component-systems-1.png) 
+ 
+In the above example, we can see that the config key is also populated in the
+record map. If we do not `assoc` nil into the config passed into the component,
+the value will remain in the record. A properly closed component should look
+something like this:
+
+![](assets/component-systems-2.png)
+
+We do not want a situation where this is what we code:
+
+```clojure
+(defrecord Db [config conn]
+  Lifecycle
+  (start [component]
+    (let [db-conf (:db-config config)
+          db-conn (create-connection! db-conf)]
+      (assoc component :conn db-conn)))
+  (stop [component]
+    (stop! conn)
+    (assoc component :conn nil)))
+```
+
+Here we can see that we do not put nil into the `config` key. This means that
+the record will have configuration left in it.
+
+![](assets/component-systems-3.png)
+
+While this may be harmless in the case of a small configuration component, it may
+affect application performance when there is a system re-launching components often
+that may have fields such as database connections or any other _heavy lifting_
+features.
